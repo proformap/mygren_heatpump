@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Mygren Heat Pump",
+        "description": "Enter the connection details for your Mygren heat pump.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "host": "The address of your heat pump (e.g., https://192.168.1.100 or https://mygren.home.arpa). Uses HTTPS by default.",
+          "verify_ssl": "Disable for self-signed certificates (most local installations)."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the heat pump. Check the host address and ensure the heat pump is reachable. If using HTTPS with a self-signed certificate, make sure 'Verify SSL certificate' is unchecked.",
+      "invalid_auth": "Invalid username or password.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This heat pump is already configured."
+    }
+  }
+}
