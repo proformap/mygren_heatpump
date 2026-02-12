@@ -18,7 +18,7 @@ If you haven't already, install HACS (Home Assistant Community Store) by followi
 3. Click the **three dots** (⋮) in the top right corner
 4. Select **Custom repositories**
 5. Add the following:
-   - **Repository**: `https://github.com/yourusername/mygren_heatpump`
+   - **Repository**: `https://github.com/proformap/mygren_heatpump`
    - **Category**: Integration
 6. Click **Add**
 
@@ -48,7 +48,7 @@ If you haven't already, install HACS (Home Assistant Community Store) by followi
 
 Download the latest release or clone this repository:
 ```bash
-git clone https://github.com/yourusername/mygren_heatpump.git
+git clone https://github.com/proformap/mygren_heatpump.git
 ```
 
 ### Step 2: Copy Files
