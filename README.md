@@ -3,12 +3,12 @@
 Custom Home Assistant integration for **Mygren geo-thermal heat pumps** running **MaR firmware v4+**.
 
 > **Breaking change in v2.0:** This release drops support for MaR v3 (integer-based programs).
-> If your heat pump still runs MaR v3 firmware, use the [v1.x release](https://github.com/proformap/mygren_heatpump/releases/tag/v.1.1.1).
+> If your heat pump still runs MaR v3 firmware, use the [v1.x release].
 
 ## Features
 
 * **Climate Control** — HVAC modes derived dynamically from the API `available_programs` list; no hardcoded presets
-* **Water Heater** — Control hot water (TÚV) temperature and enable/disable
+* **Water Heater** — Control hot water (TUV) temperature and enable/disable
 * **Temperature Sensors** — All system temperatures (primary, secondary, system, buffer, external, interior, discharge)
 * **Binary Sensors** — Compressor status, heat pump running, heating/cooling, failures, tariff
 * **Number Controls** — Heating curve (1–9) and curve shift (−5 to +5)
