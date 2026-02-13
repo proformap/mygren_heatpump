@@ -73,7 +73,7 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
             "manufacturer": "Mygren (AI Trade s.r.o.)",
-            "model": "Geo Heat Pump",
+            "model": "SMARTHUB 06",
             "sw_version": coordinator.data.get("mar_version", "Unknown"),
         }
 
