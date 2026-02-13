@@ -1,6 +1,6 @@
 {
   "domain": "mygren_heatpump",
-  "name": "Mygren Heat Pump",
+  "name": "Mygren S06 Heat Pump",
   "codeowners": ["@proformap"],
   "config_flow": true,
   "documentation": "https://github.com/proformap/mygren_heatpump",
@@ -8,5 +8,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/proformap/mygren_heatpump/issues",
   "requirements": [],
-  "version": "2.0.0"
+  "version": "1.3.0"
 }
