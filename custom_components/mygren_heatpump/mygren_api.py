@@ -2,9 +2,9 @@
 
 Key fixes over v1.x:
 - Uses aiohttp instead of synchronous requests (proper HA async pattern)
-- SSL verification disabled by default for self-signed certificates (ROOT CAUSE fix)
-- PUT payloads wrap values in {"variable_name": value} objects matching the
-  telemetry variable names (the API resolves variables by key, not URL path)
+- SSL verification disabled by default for self-signed certificates
+- PUT payloads use the last URL path segment as the JSON key,
+  e.g. PUT /api/tuv/set sends {"set": 43}
 - Proper token refresh with 401 retry logic
 - Configurable SSL verification
 """
@@ -48,6 +48,19 @@ class MygrenAuthError(MygrenAPIError):
 
 class MygrenConnectionError(MygrenAPIError):
     """Exception for connection errors."""
+
+
+def _endpoint_key(endpoint: str) -> str:
+    """Extract the last path segment from an API endpoint.
+
+    The Mygren API expects PUT payloads as {"<last_segment>": value}.
+    For example:
+        /api/tuv/set          -> "set"
+        /api/tuv/enabled      -> "enabled"
+        /api/program/curve    -> "curve"
+        /api/heatpump/tariff/watch -> "watch"
+    """
+    return endpoint.rstrip("/").rsplit("/", 1)[-1]
 
 
 class MygrenAPI:
@@ -191,10 +204,8 @@ class MygrenAPI:
     ) -> Any:
         """Make an authenticated API request with automatic token refresh.
 
-        For PUT requests, `data` should be a dict keyed by the telemetry
-        variable name, e.g. {"tuv_enabled": 1}. The Mygren API resolves
-        which variable to update from the key in the JSON body, NOT from
-        the URL path segment.
+        For PUT requests, `data` is sent as the raw JSON body. Callers
+        must wrap values as {"<last_url_segment>": value}.
         """
         await self._ensure_token()
         session = await self._get_session()
@@ -261,6 +272,18 @@ class MygrenAPI:
                 f"Connection error during {method} {endpoint}: {err}"
             ) from err
 
+    async def _put(self, endpoint: str, value: Any) -> Any:
+        """PUT a value to an endpoint.
+
+        Wraps the value as {<last_url_segment>: value}, which is the
+        format the Mygren API expects. For example:
+            _put("/api/tuv/set", 43)       -> PUT body {"set": 43}
+            _put("/api/tuv/enabled", 1)    -> PUT body {"enabled": 1}
+            _put("/api/program/curve", 3)  -> PUT body {"curve": 3}
+        """
+        key = _endpoint_key(endpoint)
+        return await self._request("PUT", endpoint, data={key: value})
+
     # ── Telemetry ──────────────────────────────────────────────────
 
     async def get_telemetry(self) -> dict[str, Any]:
@@ -271,23 +294,15 @@ class MygrenAPI:
 
     async def set_tuv_temperature(self, temperature: int) -> Any:
         """Set hot water target temperature."""
-        return await self._request(
-            "PUT", API_TUV_SET, data={"tuv_set": temperature}
-        )
+        return await self._put(API_TUV_SET, temperature)
 
     async def set_tuv_enabled(self, enabled: bool) -> Any:
         """Enable or disable hot water heating."""
-        return await self._request(
-            "PUT", API_TUV_ENABLED, data={"tuv_enabled": 1 if enabled else 0}
-        )
+        return await self._put(API_TUV_ENABLED, 1 if enabled else 0)
 
     async def set_tuv_scheduler_enabled(self, enabled: bool) -> Any:
         """Enable or disable hot water scheduler."""
-        return await self._request(
-            "PUT",
-            API_TUV_SCHEDULER_ENABLED,
-            data={"tuv_sched_enabled": 1 if enabled else 0},
-        )
+        return await self._put(API_TUV_SCHEDULER_ENABLED, 1 if enabled else 0)
 
     # ── Program ───────────────────────────────────────────────────
 
@@ -299,57 +314,39 @@ class MygrenAPI:
         Older firmware uses integers:
             0=Off, 1=Auto/Ekvithermal, 2=Manual
         """
-        return await self._request(
-            "PUT", API_PROGRAM_PROGRAM, data={"program": program}
-        )
+        return await self._put(API_PROGRAM_PROGRAM, program)
 
     async def set_curve(self, curve: int) -> Any:
         """Set the ekvithermal curve number (1-9)."""
-        return await self._request(
-            "PUT", API_PROGRAM_CURVE, data={"curve": curve}
-        )
+        return await self._put(API_PROGRAM_CURVE, curve)
 
     async def set_shift(self, shift: int) -> Any:
         """Set the ekvithermal curve shift (-5 to +5)."""
-        return await self._request(
-            "PUT", API_PROGRAM_SHIFT, data={"shift": shift}
-        )
+        return await self._put(API_PROGRAM_SHIFT, shift)
 
     async def set_manual_temperature(self, temperature: int) -> Any:
         """Set manual program output temperature."""
-        return await self._request(
-            "PUT", API_PROGRAM_MANUAL, data={"manual": temperature}
-        )
+        return await self._put(API_PROGRAM_MANUAL, temperature)
 
     async def set_comfort_temperature(self, temperature: int) -> Any:
         """Set comfort temperature."""
-        return await self._request(
-            "PUT", API_PROGRAM_COMFORT, data={"comfort": temperature}
-        )
+        return await self._put(API_PROGRAM_COMFORT, temperature)
 
     async def set_program_scheduler_enabled(self, enabled: bool) -> Any:
         """Enable or disable program scheduler."""
-        return await self._request(
-            "PUT",
-            API_PROGRAM_SCHEDULER_ENABLED,
-            data={"program_sched_enabled": 1 if enabled else 0},
+        return await self._put(
+            API_PROGRAM_SCHEDULER_ENABLED, 1 if enabled else 0
         )
 
     # ── Heatpump ──────────────────────────────────────────────────
 
     async def set_heatpump_enabled(self, enabled: bool) -> Any:
         """Enable or disable the heat pump."""
-        return await self._request(
-            "PUT", API_HEATPUMP_ENABLED, data={"hp_enabled": 1 if enabled else 0}
-        )
+        return await self._put(API_HEATPUMP_ENABLED, 1 if enabled else 0)
 
     async def set_tariff_watch(self, enabled: bool) -> Any:
         """Enable or disable tariff watching."""
-        return await self._request(
-            "PUT",
-            API_HEATPUMP_TARIFF_WATCH,
-            data={"tariff_watch": 1 if enabled else 0},
-        )
+        return await self._put(API_HEATPUMP_TARIFF_WATCH, 1 if enabled else 0)
 
     # ── Connection test ───────────────────────────────────────────
 
