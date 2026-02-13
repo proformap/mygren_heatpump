@@ -1,6 +1,6 @@
 # Mygren Heat Pump Integration for Home Assistant
 
-Custom integration for Mygren heat pumps, allowing monitoring and control through Home Assistant.
+Custom integration for Mygren S06 heat pumps, allowing monitoring and control through Home Assistant.
 
 ## Features
 
