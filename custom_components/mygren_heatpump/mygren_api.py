@@ -1,11 +1,11 @@
-"""Async API client for Mygren Heat Pump.
+"""Async API client for Mygren Heat Pump (MaR v4+).
 
-Key fixes over v1.x:
-- Uses aiohttp instead of synchronous requests (proper HA async pattern)
+Key design points:
+- Uses aiohttp for proper Home Assistant async patterns
 - SSL verification disabled by default for self-signed certificates
 - PUT payloads use the last URL path segment as the JSON key,
   e.g. PUT /api/tuv/set sends {"set": 43}
-- Proper token refresh with 401 retry logic
+- Automatic 401 retry with token refresh
 - Configurable SSL verification
 """
 from __future__ import annotations
@@ -64,11 +64,11 @@ def _endpoint_key(endpoint: str) -> str:
 
 
 class MygrenAPI:
-    """Async API client for the Mygren heat pump REST API.
+    """Async API client for the Mygren heat pump REST API (MaR v4+).
 
     The Mygren heat pump exposes a local HTTPS REST API (lighttpd + PHP)
-    authenticated via JWT Bearer tokens. Most installations use self-signed
-    certificates, so SSL verification is disabled by default.
+    authenticated via JWT Bearer tokens.  Most installations use
+    self-signed certificates, so SSL verification is disabled by default.
     """
 
     def __init__(
@@ -202,11 +202,7 @@ class MygrenAPI:
         data: Any = None,
         retry_auth: bool = True,
     ) -> Any:
-        """Make an authenticated API request with automatic token refresh.
-
-        For PUT requests, `data` is sent as the raw JSON body. Callers
-        must wrap values as {"<last_url_segment>": value}.
-        """
+        """Make an authenticated API request with automatic token refresh."""
         await self._ensure_token()
         session = await self._get_session()
         url = self._url(endpoint)
@@ -219,7 +215,6 @@ class MygrenAPI:
                 "ssl": self._ssl_context,
             }
 
-            # Send data as JSON body
             if data is not None:
                 kwargs["json"] = data
 
@@ -276,7 +271,8 @@ class MygrenAPI:
         """PUT a value to an endpoint.
 
         Wraps the value as {<last_url_segment>: value}, which is the
-        format the Mygren API expects. For example:
+        format the Mygren API expects.  For example::
+
             _put("/api/tuv/set", 43)       -> PUT body {"set": 43}
             _put("/api/tuv/enabled", 1)    -> PUT body {"enabled": 1}
             _put("/api/program/curve", 3)  -> PUT body {"curve": 3}
@@ -306,13 +302,11 @@ class MygrenAPI:
 
     # ── Program ───────────────────────────────────────────────────
 
-    async def set_program(self, program: str | int) -> Any:
+    async def set_program(self, program: str) -> Any:
         """Set the active heating program.
 
-        Newer firmware (v4+) uses string values:
-            "Off", "Manual_comfort", "Cooling_comfort"
-        Older firmware uses integers:
-            0=Off, 1=Auto/Ekvithermal, 2=Manual
+        MaR v4 uses string values from the ``available_programs`` list,
+        e.g. "Off", "Manual_comfort", "Cooling_comfort".
         """
         return await self._put(API_PROGRAM_PROGRAM, program)
 
@@ -329,7 +323,7 @@ class MygrenAPI:
         return await self._put(API_PROGRAM_MANUAL, temperature)
 
     async def set_comfort_temperature(self, temperature: int) -> Any:
-        """Set comfort temperature."""
+        """Set comfort (interior target) temperature."""
         return await self._put(API_PROGRAM_COMFORT, temperature)
 
     async def set_program_scheduler_enabled(self, enabled: bool) -> Any:
