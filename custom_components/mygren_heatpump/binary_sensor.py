@@ -165,7 +165,7 @@ class MygrenBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
             "manufacturer": "Mygren (AI Trade s.r.o.)",
-            "model": "Geo Heat Pump",
+            "model": "Heat Pump SMARTHUB S06",
             "sw_version": coordinator.data.get("mar_version", "Unknown"),
         }
 
