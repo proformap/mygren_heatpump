@@ -13,7 +13,7 @@ DEFAULT_NAME = "Mygren Heat Pump"
 DEFAULT_SCAN_INTERVAL = 30
 
 # API endpoints (relative to /api)
-API_VERSION = "/api"
+API_VERSION = "/api/"
 API_LOGIN = "/api/login"
 API_TELEMETRY = "/api/telemetry"
 API_RESOURCES = "/api/resources"
