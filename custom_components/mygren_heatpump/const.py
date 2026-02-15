@@ -13,6 +13,7 @@ DEFAULT_NAME = "Mygren Heat Pump"
 DEFAULT_SCAN_INTERVAL = 30
 
 # API endpoints (relative to /api)
+API_VERSION = "/"
 API_LOGIN = "/api/login"
 API_TELEMETRY = "/api/telemetry"
 API_RESOURCES = "/api/resources"
@@ -24,6 +25,7 @@ API_TUV = "/api/tuv"
 API_TUV_SET = "/api/tuv/set"
 API_TUV_ENABLED = "/api/tuv/enabled"
 API_TUV_SCHEDULER_ENABLED = "/api/tuv/scheduler/enabled"
+# API_TUV_SCHEDULER = /tuv/scheduler/[id]    # not supported in the current version ("get", "put", "post", "delete")
 
 # Program endpoints
 API_PROGRAM = "/api/program"
@@ -33,6 +35,7 @@ API_PROGRAM_SHIFT = "/api/program/shift"
 API_PROGRAM_MANUAL = "/api/program/manual"
 API_PROGRAM_COMFORT = "/api/program/comfort"
 API_PROGRAM_SCHEDULER_ENABLED = "/api/program/scheduler/enabled"
+# API_PROGRAM_SCHEDULER = /program/scheduler/[id]    # not supported in the current version ("get", "put", "post", "delete")
 
 # Heatpump endpoints
 API_HEATPUMP = "/api/heatpump"
