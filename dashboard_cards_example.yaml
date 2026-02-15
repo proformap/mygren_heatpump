@@ -1,0 +1,119 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Mygren Heat Pump – Suggested Dashboard Cards (v2.1.0)
+#
+#  Replace "ENTRY_ID" with your actual config entry ID, or use the
+#  entity picker in the HA dashboard editor to select the entities.
+#  The entity IDs below assume the default naming convention.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# ── 1. Heat Pump Status & Info Card ──────────────────────────────────
+type: entities
+title: "🔧 Heat Pump Status & Info"
+show_header_toggle: false
+entities:
+  - type: section
+    label: System State
+  - entity: binary_sensor.mygren_heatpump_online
+    name: Online
+  - entity: binary_sensor.mygren_heatpump_compressor
+    name: Compressor
+  - entity: binary_sensor.mygren_heatpump_hprun
+    name: Heat Pump Running
+  - entity: binary_sensor.mygren_heatpump_heating
+    name: Heating Active
+  - entity: binary_sensor.mygren_heatpump_cooling
+    name: Cooling Active
+  - entity: sensor.mygren_heatpump_tariff
+    name: Tariff State
+
+  - type: section
+    label: System Runtime
+  - entity: sensor.mygren_heatpump_sstartcnt
+    name: System Start Count
+  - entity: sensor.mygren_heatpump_sruntime_formatted
+    name: System Runtime
+  - entity: sensor.mygren_heatpump_sstarttime
+    name: System Start Time
+  - entity: sensor.mygren_heatpump_systemuptime_formatted
+    name: System Uptime
+  - entity: sensor.mygren_heatpump_systemload
+    name: System Load
+
+  - type: section
+    label: Compressor
+  - entity: sensor.mygren_heatpump_cstartcnt
+    name: Compressor Start Count
+  - entity: sensor.mygren_heatpump_cruntime_formatted
+    name: Compressor Runtime
+  - entity: sensor.mygren_heatpump_cstarttime
+    name: Compressor Start Time
+  - entity: sensor.mygren_heatpump_cstoptime
+    name: Compressor Stop Time
+
+  - type: section
+    label: Errors & Thermostats
+  - entity: sensor.mygren_heatpump_sensorerrorcnt
+    name: Sensor Error Count
+  - entity: binary_sensor.mygren_heatpump_pw_error
+    name: Power Error
+  - entity: binary_sensor.mygren_heatpump_hp_failure
+    name: Heat Pump Failure
+  - entity: binary_sensor.mygren_heatpump_hwthermostat1
+    name: HW Thermostat 1
+  - entity: binary_sensor.mygren_heatpump_swthermostat1
+    name: SW Thermostat 1
+
+  - type: section
+    label: Software Versions
+  - entity: sensor.mygren_heatpump_display_version
+    name: Display
+  - entity: sensor.mygren_heatpump_hostname
+    name: Hostname
+  - entity: sensor.mygren_heatpump_os_version
+    name: OS
+  - entity: sensor.mygren_heatpump_binaries_version
+    name: Binaries
+  - entity: sensor.mygren_heatpump_mar_version
+    name: MaR
+  - entity: sensor.mygren_heatpump_owm_version
+    name: OWM
+  - entity: sensor.mygren_heatpump_cm_version
+    name: CM
+
+
+---
+# ── 2. Pumps & Valves Diagnostic Card ───────────────────────────────
+type: entities
+title: "⚙️ Pumps & Valves"
+show_header_toggle: false
+entities:
+  - type: section
+    label: Circulation Pumps
+  - entity: binary_sensor.mygren_heatpump_cpprimary
+    name: Primary
+  - entity: binary_sensor.mygren_heatpump_cppreprimary
+    name: Pre-Primary
+  - entity: binary_sensor.mygren_heatpump_cpsecondary
+    name: Secondary
+  - entity: binary_sensor.mygren_heatpump_cpsystem
+    name: System
+  - entity: binary_sensor.mygren_heatpump_cptuv
+    name: TUV
+  - entity: binary_sensor.mygren_heatpump_cpradiator
+    name: Radiator
+
+  - type: section
+    label: Three-Way Valves
+  - entity: binary_sensor.mygren_heatpump_twv_sec_01
+    name: Secondary 01
+  - entity: binary_sensor.mygren_heatpump_twv_sec_02
+    name: Secondary 02
+  - entity: binary_sensor.mygren_heatpump_twv_cooling
+    name: Cooling
+
+  - type: section
+    label: Mixing Valve
+  - entity: binary_sensor.mygren_heatpump_mixup
+    name: Mixing Up
+  - entity: binary_sensor.mygren_heatpump_mixdown
+    name: Mixing Down
