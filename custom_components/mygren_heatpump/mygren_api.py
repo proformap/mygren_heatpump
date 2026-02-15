@@ -18,6 +18,7 @@ from typing import Any
 import aiohttp
 
 from .const import (
+    API_VERSION,
     API_HEATPUMP_ENABLED,
     API_HEATPUMP_TARIFF_WATCH,
     API_LOGIN,
