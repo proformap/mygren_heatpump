@@ -5,15 +5,28 @@ Custom Home Assistant integration for **Mygren geo-thermal heat pumps** running 
 > **Breaking change in v2.0:** This release drops support for MaR v3 (integer-based programs).
 > If your heat pump still runs MaR v3 firmware, use the [v1.x release].
 
+## About
+
+[Mygren](https://www.mygren.eu/) is a monitoring and control system (MaR — Meranie a Regulácia) developed by **AI Trade s.r.o.** for ground-source (geothermal) heat pumps. The **SMARTHUB S06** controller runs on an embedded Linux board and exposes a local REST API over HTTPS, providing full read/write access to the heat pump's operating parameters.
+
+This integration connects Home Assistant to your Mygren heat pump over your **local network** — no cloud, no internet dependency. It polls the `/api/telemetry` endpoint for all runtime data and uses authenticated PUT requests to change settings.
+
+**Supported hardware:**
+- Mygren SMARTHUB S06 controller
+- Ground-source (water/water or brine/water) heat pumps managed by Mygren MaR v4.x firmware
+- Installations with or without buffer tank, hot water (TÚV) boiler, radiator circuit, and tariff relay
+
 ## Features
 
 * **Climate Control** — HVAC modes derived dynamically from the API `available_programs` list; no hardcoded presets
 * **Water Heater** — Control hot water (TUV) temperature and enable/disable
 * **Temperature Sensors** — All system temperatures (primary, secondary, system, buffer, external, interior, discharge)
-* **Binary Sensors** — Compressor status, heat pump running, heating/cooling, failures, tariff
+* **Binary Sensors** — Compressor, pumps, valves, heating/cooling, failures, tariff
 * **Number Controls** — Heating curve (1–9) and curve shift (−5 to +5)
 * **Switches** — Hot water scheduler, program scheduler, tariff watching
-* **Status Monitoring** — Program mode, compressor runtime & starts, system state
+* **Diagnostic Sensors** — Software versions, runtimes (formatted as d/h/m/s), start counts, system load, error counters, circulation pump states, three-way valve positions
+* **Optimistic Updates** — UI reflects changes immediately when you adjust temperature, mode, or switches — no waiting for the next poll cycle
+* **Device Info** — "Visit" link to the heat pump's service desk web interface
 
 ## Requirements
 
@@ -45,6 +58,22 @@ Custom Home Assistant integration for **Mygren geo-thermal heat pumps** running 
    | Username | Default: `admin` |
    | Password | Your heat pump password |
    | Verify SSL | Uncheck for self-signed certs (most installs) |
+
+## Removing the Integration
+
+1. Go to **Settings → Devices & Services**
+2. Find the **Mygren S06 Heat Pump** integration card
+3. Click the three-dot menu (⋮) and select **Delete**
+4. Confirm the deletion
+5. Restart Home Assistant (recommended)
+
+This removes all entities, devices, and stored credentials associated with the integration. Your heat pump continues to operate normally on its own — the integration is read/write but the heat pump does not depend on Home Assistant.
+
+## How Data is Updated
+
+The integration polls the heat pump's `/api/telemetry` endpoint every **30 seconds** over HTTPS on your local network. This single API call returns all runtime variables — temperatures, states, counters, versions — in one JSON response.
+
+When you make changes through the HA UI (temperature, mode, switches), the integration sends a PUT request to the relevant API endpoint and immediately updates the entity state **optimistically** — you see the change in the UI within milliseconds. The next poll cycle then confirms the actual device state.
 
 ## Climate Entity
 
@@ -107,11 +136,27 @@ This version intentionally **does not expose preset modes** (Comfort / Eco). Pro
 
 ### Binary Sensors
 
-Online, Compressor, Heat Pump Running, Heating Active, Cooling Active, HP Enabled, Hot Water Enabled, Hot Water Needs Heat, Buffer Needs Heat, Power Error, HP Can Start, HP Failure, HP Forced Pause, Tariff Installed, System Needs Heat, System Needs Cooling.
+**Operational:** Online, Compressor, Heat Pump Running, Heating Active, Cooling Active, HP Enabled, Hot Water Enabled, Hot Water Needs Heat, Buffer Needs Heat, Heat Needed, System Needs Heat, System Needs Cooling, Tariff Installed.
 
-### Status Sensors
+**Errors (diagnostic):** Power Error, Heat Pump Failure, High Secondary In.
 
-Control State, Program Mode, System Destination Temp, Compressor Runtime, Compressor Start Count, System Runtime, Heating Curve, Curve Shift, Comfort Temperature, Manual Temperature.
+**Control state (diagnostic):** HP Can Start, HP Can Stop, HP Forced Pause, Primary Forced Run, HW Thermostat 1, SW Thermostat 1, Program Scheduler Active, Hot Water Scheduler Active, Radiator Installed.
+
+**Circulation pumps (diagnostic):** Primary, Pre-Primary, Secondary, System, TUV, Radiator.
+
+**Valves (diagnostic):** Three-Way Valve Secondary 01/02, Three-Way Valve Cooling, Mixing Valve Up/Down.
+
+### Status & Diagnostic Sensors
+
+**Operational:** Control State, Program Mode, System Destination Temp, Heating Curve, Curve Shift, Comfort Temperature, Manual Temperature, Hot Water Target Temperature, Hot Water Gradient, Buffer Gradient, Tariff State, Phases.
+
+**Runtimes & counters (diagnostic):** System Runtime (raw seconds + formatted d/h/m/s), System Uptime (raw + formatted), System Start Count, System Start Time, Compressor Runtime (raw + formatted), Compressor Start Count, Compressor Start Time, Compressor Stop Time, Sensor Error Count, System Load.
+
+**Software versions (diagnostic):** Display Version, Hostname, OS Version, Binaries Version, MaR Version, OWM Version, CM Version.
+
+**Limits (diagnostic):** Buffer Min/Max Temperature, Hot Water Hysteresis Min/Max.
+
+> Entities marked *(diagnostic)* appear under the "Diagnostic" section on the device page in HA. They are not shown on the default dashboard but can be added manually.
 
 ## API Endpoints Used
 
@@ -164,15 +209,108 @@ Control State, Program Mode, System Destination Temp, Compressor Runtime, Compre
 
 ## Troubleshooting
 
-**Cannot Connect** — Verify host includes `https://`, check network, check firewall. Most installs use self-signed certs — uncheck *Verify SSL*.
+**Cannot Connect** — Verify the host includes `https://` (the heat pump only serves HTTPS). Check that HA can reach the heat pump on your network. Most Mygren installations use self-signed certificates — make sure *Verify SSL* is unchecked.
 
-**Invalid Authentication** — Verify username/password. Default user is `admin`.
+**Invalid Authentication** — Verify username and password. The default username is `admin`. If you changed the password on the heat pump's service desk, use the new one.
 
-**Entities Not Updating** — Check heat pump is online, check HA logs for errors.
+**Entities show "Unavailable"** — The heat pump may be offline, in maintenance mode, or unreachable. Check HA logs (`Logger: custom_components.mygren_heatpump`) for specific error messages. API status code `503` means the MaR control loop is not running (starting up, in service mode, or crashed) — see the MaR system codes documentation for details.
 
-**"Unknown program" warnings** — Your firmware may have programs not yet mapped. Open an issue with your `available_programs` list.
+**"Unknown program" warnings in logs** — Your firmware may have program names not yet mapped to HVAC modes. Open a GitHub issue with your `available_programs` list from the telemetry response.
 
-## Upgrading from v1.x
+**SSL errors** — If you see `aiohttp.ClientSSLError`, the heat pump's certificate is self-signed (normal). Uncheck *Verify SSL* in the integration configuration. If you previously had it checked, you'll need to remove and re-add the integration.
+
+## Known Limitations
+
+- **MaR v3 not supported** — v2.x only works with MaR v4+ firmware (string-based program names). For v3 (integer programs), use the v1.x release.
+- **Single device per entry** — each config entry connects to one heat pump. For multiple heat pumps, add the integration multiple times.
+- **Scheduler management not implemented** — the TUV and program scheduler entries (`/scheduler/[id]` endpoints) are not yet exposed. Schedulers can be enabled/disabled via switches, but individual schedule entries must be managed through the heat pump's service desk.
+- **No auto-discovery** — the heat pump must be configured manually with its IP/hostname.
+- **Polling only** — the heat pump API does not support push notifications or WebSockets. Data is refreshed every 30 seconds.
+- **External/buffer temperatures** — some installations may report `0` for `Text`, `TextAvg`, or `Tbuf` if the corresponding sensors are not physically installed. These entities will show as "Unavailable".
+
+## Automation Examples
+
+### Notify when compressor starts
+
+```yaml
+automation:
+  - alias: "Notify on compressor start"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.aus_porazik_hainburg_compressor
+        from: "off"
+        to: "on"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "Heat Pump"
+          message: "Compressor started"
+```
+
+### Lower hot water temperature at night
+
+```yaml
+automation:
+  - alias: "TUV night setback"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    action:
+      - service: water_heater.set_temperature
+        target:
+          entity_id: water_heater.aus_porazik_hainburg_hot_water
+        data:
+          temperature: 38
+
+  - alias: "TUV morning recovery"
+    trigger:
+      - platform: time
+        at: "05:00:00"
+    action:
+      - service: water_heater.set_temperature
+        target:
+          entity_id: water_heater.aus_porazik_hainburg_hot_water
+        data:
+          temperature: 43
+```
+
+### Alert on heat pump failure
+
+```yaml
+automation:
+  - alias: "Heat pump failure alert"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.aus_porazik_hainburg_heat_pump_failure
+        to: "on"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "⚠️ Heat Pump Failure"
+          message: "Heat pump has reported a failure — check the service desk."
+```
+
+## Upgrading from v2.0.3 to v2.2.0
+
+v2.2.0 is a non-breaking upgrade from v2.0.3. All existing entity IDs, automations, and scripts continue to work. Here's what changes:
+
+**Entity display names change** — v2.2.0 adds `has_entity_name` to all entity platforms. HA will now show entity names as `{device name} {entity name}` (e.g. "aus-porazik-hainburg Primary In Temperature" instead of just "Primary In Temperature"). Your `entity_id` strings stay the same — only the friendly name displayed in the UI changes. If you've customized entity names through the UI, your customizations take priority and are not affected.
+
+**~30 new entities appear** — New diagnostic entities are added for circulation pumps, valves, software versions, runtimes, timestamps, limits, and more. Most of these are **disabled by default** — they're registered in HA but don't generate state updates or appear in dashboards until you manually enable them. To enable: go to the device page → click on the disabled entity → toggle "Enable".
+
+Entities enabled by default in v2.2.0 that were not present in v2.0.3: `hp_failure`, `high_secondary_in`, `pw_error` (error alerts), `heatneed`, `cruntime`, `cstartcnt`.
+
+**Optimistic updates** — Temperature, mode, and switch changes now reflect in the UI immediately instead of waiting for the next 30-second poll. No configuration needed — this is automatic.
+
+**Upgrade steps:**
+
+1. Install v2.2.0 via HACS (or copy the files manually)
+2. Restart Home Assistant
+3. Check your device page — new entities appear under "Diagnostic"
+4. Optionally enable any disabled entities you want to track
+5. No changes needed to existing automations or scripts
+
+## Upgrading from v1.x to v2.x
 
 v2.0 removes MaR v3 support and the Comfort/Eco preset modes. After upgrading:
 
