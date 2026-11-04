@@ -8,8 +8,8 @@ Example programs: ["Off", "Manual_comfort", "Cooling_comfort"]
 Program → HVAC-mode mapping
 ----------------------------
   "Off"                          → HVACMode.OFF
-  Programs containing "Manual"   → HVACMode.HEAT
   Programs containing "Cooling"  → HVACMode.COOL
+  Any other program              → HVACMode.HEAT
 
 Temperature control
 -------------------
@@ -57,22 +57,36 @@ def _same_temperature(actual: Any, target: float) -> bool:
     return actual is not None and abs(float(actual) - target) < 0.05
 
 
-_MODE_MATCHERS: dict[str, Any] = {
-    "off":     lambda p: p == "Off",
-    "manual":  lambda p: "Manual" in p,
-    "cooling": lambda p: "Cooling" in p,
-}
+_warned_programs: set[str] = set()
 
 
-def _find_program(available: list[str], target: str) -> str | None:
-    """Return the first program from *available* that matches *target*."""
-    matcher = _MODE_MATCHERS.get(target)
-    if matcher is None:
-        return None
-    for prog in available:
-        if isinstance(prog, str) and matcher(prog):
-            return prog
-    return None
+def _program_mode(program: Any) -> HVACMode:
+    """Return the HVAC mode for a program name.
+
+    Any program that isn't off or cooling is treated as heating, so an unknown
+    program on a running pump isn't reported as off.
+    """
+    if not isinstance(program, str) or not program or program == "Off":
+        return HVACMode.OFF
+    if "Cooling" in program:
+        return HVACMode.COOL
+    if "Manual" not in program and program not in _warned_programs:
+        _warned_programs.add(program)
+        _LOGGER.warning("Unknown program '%s', treating it as heating", program)
+    return HVACMode.HEAT
+
+
+def _find_program(available: list[str], mode: HVACMode) -> str | None:
+    """Return the program to select for *mode*, preferring a Manual program."""
+    matches = [
+        prog
+        for prog in available
+        if isinstance(prog, str) and prog and _program_mode(prog) == mode
+    ]
+    return next(
+        (prog for prog in matches if "Manual" in prog),
+        matches[0] if matches else None,
+    )
 
 
 async def async_setup_entry(
@@ -112,14 +126,7 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
         """Derive HVAC mode from raw coordinator data (no optimistic check)."""
         if not data.get("hp_enabled"):
             return HVACMode.OFF
-        program = data.get("program", "")
-        if program == "Off":
-            return HVACMode.OFF
-        if isinstance(program, str) and "Cooling" in program:
-            return HVACMode.COOL
-        if isinstance(program, str) and "Manual" in program:
-            return HVACMode.HEAT
-        return HVACMode.OFF
+        return _program_mode(data.get("program"))
 
     def _handle_coordinator_update(self) -> None:
         """Clear optimistic state only when coordinator data confirms the change.
@@ -150,13 +157,12 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
         """Build the HVAC-mode list dynamically from available_programs."""
         modes: list[HVACMode] = [HVACMode.OFF]
 
-        for prog in self._available_programs():
-            if not isinstance(prog, str) or prog == "Off":
-                continue
-            if "Manual" in prog and HVACMode.HEAT not in modes:
-                modes.append(HVACMode.HEAT)
-            elif "Cooling" in prog and HVACMode.COOL not in modes:
-                modes.append(HVACMode.COOL)
+        # Include the active program so the current mode is always in the list
+        current = self.coordinator.data.get("program")
+        for prog in [*self._available_programs(), current]:
+            mode = _program_mode(prog)
+            if mode not in modes:
+                modes.append(mode)
 
         return modes
 
@@ -166,20 +172,7 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
         if self._pending_mode.value is not None:
             return self._pending_mode.value
 
-        if not self.coordinator.data.get("hp_enabled"):
-            return HVACMode.OFF
-
-        program = self.coordinator.data.get("program", "")
-
-        if program == "Off":
-            return HVACMode.OFF
-        if isinstance(program, str) and "Cooling" in program:
-            return HVACMode.COOL
-        if isinstance(program, str) and "Manual" in program:
-            return HVACMode.HEAT
-
-        _LOGGER.debug("Unknown program '%s', reporting OFF", program)
-        return HVACMode.OFF
+        return self._mode_from_data(self.coordinator.data)
 
     @property
     def hvac_action(self) -> HVACAction:
@@ -207,11 +200,11 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        """Return the current interior temperature."""
-        temp = self.coordinator.data.get("Tint")
-        if temp is not None and temp != 0:
-            return temp
-        return self.coordinator.data.get("Tbuf") or None
+        """Return the interior temperature, or None without an interior sensor.
+
+        The pump reports 0 for a sensor that isn't installed.
+        """
+        return self.coordinator.data.get("Tint") or None
 
     @property
     def target_temperature(self) -> float | None:
@@ -263,7 +256,7 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
 
         async with rollback_on_error(self, self._pending_mode):
             if hvac_mode == HVACMode.OFF:
-                prog = _find_program(available, "off")
+                prog = _find_program(available, HVACMode.OFF)
                 if prog:
                     await self._api.set_program(prog)
                     await self._api.set_heatpump_enabled(True)
@@ -272,15 +265,15 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
 
             elif hvac_mode == HVACMode.HEAT:
                 await self._api.set_heatpump_enabled(True)
-                prog = _find_program(available, "manual")
+                prog = _find_program(available, HVACMode.HEAT)
                 if prog:
                     await self._api.set_program(prog)
                 else:
-                    _LOGGER.warning("No Manual program found in %s", available)
+                    _LOGGER.warning("No heating program found in %s", available)
 
             elif hvac_mode == HVACMode.COOL:
                 await self._api.set_heatpump_enabled(True)
-                prog = _find_program(available, "cooling")
+                prog = _find_program(available, HVACMode.COOL)
                 if prog:
                     await self._api.set_program(prog)
                 else:

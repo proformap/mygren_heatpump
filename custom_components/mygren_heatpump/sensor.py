@@ -61,6 +61,26 @@ def _fmt_timestamp(epoch) -> datetime | None:
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
+def _nonzero(data: dict, key: str):
+    """Return a temperature where 0 means the sensor isn't installed.
+
+    The pump reports 0 for a missing sensor. Only use this where a real reading
+    of exactly 0°C isn't plausible, such as indoors or in the buffer tank.
+    """
+    return data.get(key) or None
+
+
+def _external(data: dict, key: str):
+    """Return an external temperature, where 0 can be a real reading.
+
+    Treat the sensor as missing only when the current and average values are
+    both 0, because a real outdoor reading of 0°C is normal in winter.
+    """
+    if not data.get("Text") and not data.get("TextAvg"):
+        return None
+    return data.get(key)
+
+
 @dataclass
 class MygrenSensorEntityDescription(SensorEntityDescription):
     """Describes Mygren sensor entity."""
@@ -126,7 +146,7 @@ TEMPERATURE_SENSORS: tuple[MygrenSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("Tint"),
+        value_fn=lambda data: _nonzero(data, "Tint"),
     ),
     MygrenSensorEntityDescription(
         key="TintAvg",
@@ -134,7 +154,7 @@ TEMPERATURE_SENSORS: tuple[MygrenSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("TintAvg"),
+        value_fn=lambda data: _nonzero(data, "TintAvg"),
     ),
     MygrenSensorEntityDescription(
         key="Ttuv",
@@ -150,7 +170,7 @@ TEMPERATURE_SENSORS: tuple[MygrenSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("Tbuf"),
+        value_fn=lambda data: _nonzero(data, "Tbuf"),
     ),
     MygrenSensorEntityDescription(
         key="Text",
@@ -158,7 +178,7 @@ TEMPERATURE_SENSORS: tuple[MygrenSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("Text"),
+        value_fn=lambda data: _external(data, "Text"),
     ),
     MygrenSensorEntityDescription(
         key="TextAvg",
@@ -166,7 +186,7 @@ TEMPERATURE_SENSORS: tuple[MygrenSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda data: data.get("TextAvg"),
+        value_fn=lambda data: _external(data, "TextAvg"),
     ),
     MygrenSensorEntityDescription(
         key="Tdischarge",

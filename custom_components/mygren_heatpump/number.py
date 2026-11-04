@@ -10,10 +10,12 @@ from dataclasses import dataclass
 import logging
 
 from homeassistant.components.number import (
+    NumberDeviceClass,
     NumberEntity,
     NumberEntityDescription,
     NumberMode,
 )
+from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -30,6 +32,9 @@ class MygrenNumberEntityDescription(NumberEntityDescription):
     """Describes Mygren number entity."""
 
     value_fn: Callable[[dict], float | None] | None = None
+    # Telemetry fields holding the pump's own limits, if it reports them
+    min_key: str | None = None
+    max_key: str | None = None
 
 
 NUMBER_TYPES: tuple[MygrenNumberEntityDescription, ...] = (
@@ -41,6 +46,8 @@ NUMBER_TYPES: tuple[MygrenNumberEntityDescription, ...] = (
         native_max_value=9,
         native_step=1,
         mode=NumberMode.SLIDER,
+        min_key="curve_setmin",
+        max_key="curve_setmax",
         value_fn=lambda data: data.get("curve"),
     ),
     MygrenNumberEntityDescription(
@@ -51,7 +58,23 @@ NUMBER_TYPES: tuple[MygrenNumberEntityDescription, ...] = (
         native_max_value=5,
         native_step=1,
         mode=NumberMode.SLIDER,
+        min_key="shift_setmin",
+        max_key="shift_setmax",
         value_fn=lambda data: data.get("shift"),
+    ),
+    MygrenNumberEntityDescription(
+        key="manual",
+        name="Manual Output Temperature",
+        icon="mdi:thermometer-lines",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=15,
+        native_max_value=40,
+        native_step=1,
+        mode=NumberMode.BOX,
+        min_key="manual_setmin",
+        max_key="manual_setmax",
+        value_fn=lambda data: data.get("manual"),
     ),
 )
 
@@ -97,6 +120,23 @@ class MygrenNumber(CoordinatorEntity, NumberEntity):
             )
         super()._handle_coordinator_update()
 
+    def _limit(self, key: str | None, default: float) -> float:
+        """Return a limit reported by the pump, or the default."""
+        value = self.coordinator.data.get(key) if key else None
+        return value if value is not None else default
+
+    @property
+    def native_min_value(self) -> float:
+        """Return the minimum value."""
+        description = self.entity_description
+        return self._limit(description.min_key, description.native_min_value)
+
+    @property
+    def native_max_value(self) -> float:
+        """Return the maximum value."""
+        description = self.entity_description
+        return self._limit(description.max_key, description.native_max_value)
+
     @property
     def native_value(self) -> float | None:
         """Return the current value (optimistic if pending)."""
@@ -120,6 +160,8 @@ class MygrenNumber(CoordinatorEntity, NumberEntity):
                 await self._api.set_curve(int_value)
             elif self.entity_description.key == "shift":
                 await self._api.set_shift(int_value)
+            elif self.entity_description.key == "manual":
+                await self._api.set_manual_temperature(int_value)
 
         await self.coordinator.async_request_refresh()
 

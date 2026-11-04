@@ -30,6 +30,7 @@ This integration connects Home Assistant to your Mygren heat pump over your **lo
 
 ## Requirements
 
+* Home Assistant **2024.6.0** or newer
 * Mygren heat pump with **MaR v4.x** firmware (string-based program names)
 * Heat pump accessible over the local network (HTTPS)
 
@@ -87,13 +88,15 @@ The climate entity (`climate.heating`) maps the MaR v4 **`available_programs`** 
 | `"Manual_comfort"` | **Heat** | Heating with interior thermostat; comfort set-point controls room temperature |
 | `"Cooling_comfort"` | **Cool** | Cooling with interior thermostat; output fixed at 19 °C |
 
-Only modes whose programs are present in `available_programs` are shown — the list adapts automatically to each installation.
+Only modes whose programs are present in `available_programs` are shown — the list adapts automatically to each installation. Any other program name is treated as **Heat**, unless it contains `Cooling`.
 
 ### Temperature Control
 
 The target temperature on the climate card is the **comfort (room) set-point** — the desired interior temperature. Both `Manual_comfort` and `Cooling_comfort` use the interior sensor thermostat to turn the circuit on/off relative to this value.
 
-The **system output temperature** (`manual`) is a separate advanced setting exposed via the *Number* entity `number.heating_curve` and can also be adjusted through the manual temperature number entity.
+The current temperature comes from the interior sensor. Without one, the climate card shows no current temperature; the buffer temperature is still available as its own sensor.
+
+The **system output temperature** (`manual`) is a separate advanced setting, adjusted through the *Manual Output Temperature* number entity.
 
 ### No Presets
 
@@ -113,6 +116,7 @@ This version intentionally **does not expose preset modes** (Comfort / Eco). Pro
 
 * `number.heating_curve` — Ekvithermal curve selection (1–9)
 * `number.curve_shift` — Curve shift adjustment (−5 to +5)
+* `number.manual_output_temperature` — System output temperature, within the limits the heat pump reports
 
 ### Switches
 
@@ -215,7 +219,7 @@ This version intentionally **does not expose preset modes** (Comfort / Eco). Pro
 
 **Entities show "Unavailable"** — The heat pump may be offline, in maintenance mode, or unreachable. Check HA logs (`Logger: custom_components.mygren_heatpump`) for specific error messages. API status code `503` means the MaR control loop is not running (starting up, in service mode, or crashed) — see the MaR system codes documentation for details.
 
-**"Unknown program" warnings in logs** — Your firmware may have program names not yet mapped to HVAC modes. Open a GitHub issue with your `available_programs` list from the telemetry response.
+**"Unknown program" warnings in logs** — Your firmware has a program name the integration doesn't recognize, so it is shown as **Heat**. Open a GitHub issue with your `available_programs` list from the telemetry response.
 
 **SSL errors** — If you see `aiohttp.ClientSSLError`, the heat pump's certificate is self-signed (normal). Uncheck *Verify SSL* in the integration configuration. If you previously had it checked, you'll need to remove and re-add the integration.
 
@@ -226,7 +230,7 @@ This version intentionally **does not expose preset modes** (Comfort / Eco). Pro
 - **Scheduler management not implemented** — the TUV and program scheduler entries (`/scheduler/[id]` endpoints) are not yet exposed. Schedulers can be enabled/disabled via switches, but individual schedule entries must be managed through the heat pump's service desk.
 - **No auto-discovery** — the heat pump must be configured manually with its IP/hostname.
 - **Polling only** — the heat pump API does not support push notifications or WebSockets. Data is refreshed every 30 seconds.
-- **External/buffer temperatures** — some installations may report `0` for `Text`, `TextAvg`, or `Tbuf` if the corresponding sensors are not physically installed. These entities will show as "Unavailable".
+- **Sensors that aren't installed** — the heat pump reports `0` for a sensor that isn't physically installed. `Tbuf`, `Tint` and `TintAvg` show as "Unavailable" when they report `0`. `Text` and `TextAvg` show as "Unavailable" only when both report `0`, because 0 °C is a normal outdoor reading.
 
 ## Automation Examples
 
