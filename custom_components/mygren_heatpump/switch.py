@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device import mygren_device_info
 from .models import MygrenConfigEntry
+from .optimistic import PendingValue, rollback_on_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,22 +85,21 @@ class MygrenSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_device_info = mygren_device_info(
             entry, sw_version=coordinator.data.get("mar_version", "Unknown")
         )
-        # Optimistic state — None means "use coordinator data"
-        self._optimistic_state: bool | None = None
+        # Value shown until telemetry confirms it
+        self._pending = PendingValue()
 
     def _handle_coordinator_update(self) -> None:
-        """Clear optimistic state only when coordinator data confirms the change."""
-        if self._optimistic_state is not None and self.entity_description.value_fn:
+        """Clear optimistic state once telemetry confirms it or it times out."""
+        if self.entity_description.value_fn:
             actual = self.entity_description.value_fn(self.coordinator.data)
-            if actual == self._optimistic_state:
-                self._optimistic_state = None
+            self._pending.settle(lambda state: actual == state)
         super()._handle_coordinator_update()
 
     @property
     def is_on(self) -> bool:
         """Return true if the switch is on (optimistic if pending)."""
-        if self._optimistic_state is not None:
-            return self._optimistic_state
+        if self._pending.value is not None:
+            return self._pending.value
         if self.entity_description.value_fn:
             return self.entity_description.value_fn(self.coordinator.data)
         return False
@@ -107,30 +107,32 @@ class MygrenSwitch(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on with optimistic update."""
         # Optimistic: update UI immediately
-        self._optimistic_state = True
+        self._pending.set(True)
         self.async_write_ha_state()
 
-        if self.entity_description.key == "tuv_scheduler_enabled":
-            await self._api.set_tuv_scheduler_enabled(True)
-        elif self.entity_description.key == "program_scheduler_enabled":
-            await self._api.set_program_scheduler_enabled(True)
-        elif self.entity_description.key == "tariff_watch":
-            await self._api.set_tariff_watch(True)
+        async with rollback_on_error(self, self._pending):
+            if self.entity_description.key == "tuv_scheduler_enabled":
+                await self._api.set_tuv_scheduler_enabled(True)
+            elif self.entity_description.key == "program_scheduler_enabled":
+                await self._api.set_program_scheduler_enabled(True)
+            elif self.entity_description.key == "tariff_watch":
+                await self._api.set_tariff_watch(True)
 
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off with optimistic update."""
         # Optimistic: update UI immediately
-        self._optimistic_state = False
+        self._pending.set(False)
         self.async_write_ha_state()
 
-        if self.entity_description.key == "tuv_scheduler_enabled":
-            await self._api.set_tuv_scheduler_enabled(False)
-        elif self.entity_description.key == "program_scheduler_enabled":
-            await self._api.set_program_scheduler_enabled(False)
-        elif self.entity_description.key == "tariff_watch":
-            await self._api.set_tariff_watch(False)
+        async with rollback_on_error(self, self._pending):
+            if self.entity_description.key == "tuv_scheduler_enabled":
+                await self._api.set_tuv_scheduler_enabled(False)
+            elif self.entity_description.key == "program_scheduler_enabled":
+                await self._api.set_program_scheduler_enabled(False)
+            elif self.entity_description.key == "tariff_watch":
+                await self._api.set_tariff_watch(False)
 
         await self.coordinator.async_request_refresh()
 

@@ -45,10 +45,17 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device import mygren_device_info
 from .models import MygrenConfigEntry
+from .optimistic import PendingValue, rollback_on_error
 
 _LOGGER = logging.getLogger(__name__)
 
 # ── helpers ───────────────────────────────────────────────────────
+
+
+def _same_temperature(actual: Any, target: float) -> bool:
+    """Return True if telemetry matches a target set in 0.1 degree steps."""
+    return actual is not None and abs(float(actual) - target) < 0.05
+
 
 _MODE_MATCHERS: dict[str, Any] = {
     "off":     lambda p: p == "Off",
@@ -96,9 +103,9 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
         self._attr_device_info = mygren_device_info(
             entry, sw_version=coordinator.data.get("mar_version", "Unknown")
         )
-        # Optimistic state — None means "use coordinator data"
-        self._optimistic_target_temp: float | None = None
-        self._optimistic_hvac_mode: HVACMode | None = None
+        # Values shown until telemetry confirms them
+        self._pending_target = PendingValue()
+        self._pending_mode = PendingValue()
 
     @staticmethod
     def _mode_from_data(data: dict) -> HVACMode:
@@ -122,14 +129,10 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
         """
         data = self.coordinator.data
 
-        if self._optimistic_target_temp is not None:
-            actual = data.get("comfort")
-            if actual is not None and int(actual) == int(self._optimistic_target_temp):
-                self._optimistic_target_temp = None
-
-        if self._optimistic_hvac_mode is not None:
-            if self._mode_from_data(data) == self._optimistic_hvac_mode:
-                self._optimistic_hvac_mode = None
+        self._pending_target.settle(
+            lambda target: _same_temperature(data.get("comfort"), target)
+        )
+        self._pending_mode.settle(lambda mode: self._mode_from_data(data) == mode)
 
         super()._handle_coordinator_update()
 
@@ -160,8 +163,8 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
     @property
     def hvac_mode(self) -> HVACMode:
         """Return current HVAC mode (optimistic if pending)."""
-        if self._optimistic_hvac_mode is not None:
-            return self._optimistic_hvac_mode
+        if self._pending_mode.value is not None:
+            return self._pending_mode.value
 
         if not self.coordinator.data.get("hp_enabled"):
             return HVACMode.OFF
@@ -213,8 +216,8 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
     @property
     def target_temperature(self) -> float | None:
         """Return the comfort set-point (optimistic if pending)."""
-        if self._optimistic_target_temp is not None:
-            return self._optimistic_target_temp
+        if self._pending_target.value is not None:
+            return self._pending_target.value
         return self.coordinator.data.get("comfort")
 
     @property
@@ -230,7 +233,7 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
     @property
     def target_temperature_step(self) -> float:
         """Return the temperature step."""
-        return 0.5
+        return 0.1
 
     # ── commands ───────────────────────────────────────────────────
 
@@ -240,46 +243,48 @@ class MygrenClimate(CoordinatorEntity, ClimateEntity):
         if temperature is None:
             return
 
+        target = round(float(temperature), 1)
+
         # Optimistic: update UI immediately
-        self._optimistic_target_temp = float(temperature)
+        self._pending_target.set(target)
         self.async_write_ha_state()
 
-        await self._api.set_comfort_temperature(int(temperature))
+        async with rollback_on_error(self, self._pending_target):
+            await self._api.set_comfort_temperature(target)
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode with optimistic update."""
         # Optimistic: update UI immediately
-        self._optimistic_hvac_mode = hvac_mode
+        self._pending_mode.set(hvac_mode)
         self.async_write_ha_state()
 
         available = self._available_programs()
 
-        if hvac_mode == HVACMode.OFF:
-            prog = _find_program(available, "off")
-            if prog:
-                await self._api.set_program(prog)
-            else:
-                await self._api.set_heatpump_enabled(False)
-                await self.coordinator.async_request_refresh()
-                return
-            await self._api.set_heatpump_enabled(True)
+        async with rollback_on_error(self, self._pending_mode):
+            if hvac_mode == HVACMode.OFF:
+                prog = _find_program(available, "off")
+                if prog:
+                    await self._api.set_program(prog)
+                    await self._api.set_heatpump_enabled(True)
+                else:
+                    await self._api.set_heatpump_enabled(False)
 
-        elif hvac_mode == HVACMode.HEAT:
-            await self._api.set_heatpump_enabled(True)
-            prog = _find_program(available, "manual")
-            if prog:
-                await self._api.set_program(prog)
-            else:
-                _LOGGER.warning("No Manual program found in %s", available)
+            elif hvac_mode == HVACMode.HEAT:
+                await self._api.set_heatpump_enabled(True)
+                prog = _find_program(available, "manual")
+                if prog:
+                    await self._api.set_program(prog)
+                else:
+                    _LOGGER.warning("No Manual program found in %s", available)
 
-        elif hvac_mode == HVACMode.COOL:
-            await self._api.set_heatpump_enabled(True)
-            prog = _find_program(available, "cooling")
-            if prog:
-                await self._api.set_program(prog)
-            else:
-                _LOGGER.warning("No Cooling program found in %s", available)
+            elif hvac_mode == HVACMode.COOL:
+                await self._api.set_heatpump_enabled(True)
+                prog = _find_program(available, "cooling")
+                if prog:
+                    await self._api.set_program(prog)
+                else:
+                    _LOGGER.warning("No Cooling program found in %s", available)
 
         await self.coordinator.async_request_refresh()
 

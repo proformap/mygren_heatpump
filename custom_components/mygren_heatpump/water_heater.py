@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device import mygren_device_info
 from .models import MygrenConfigEntry
+from .optimistic import PendingValue, rollback_on_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ class MygrenWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         | WaterHeaterEntityFeature.OPERATION_MODE
     )
     _attr_operation_list = ["auto", "off"]
+    # The pump only accepts whole degrees for hot water
+    _attr_target_temperature_step = 1
 
     def __init__(self, coordinator, api, entry):
         """Initialize the water heater."""
@@ -58,24 +61,24 @@ class MygrenWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         self._attr_device_info = mygren_device_info(
             entry, sw_version=coordinator.data.get("mar_version", "Unknown")
         )
-        # Optimistic state — None means "use coordinator data"
-        self._optimistic_target_temp: float | None = None
-        self._optimistic_operation: str | None = None
+        # Values shown until telemetry confirms them
+        self._pending_target = PendingValue()
+        self._pending_operation = PendingValue()
 
     def _handle_coordinator_update(self) -> None:
         """Clear optimistic state only when coordinator data confirms the change."""
         data = self.coordinator.data
 
-        if self._optimistic_target_temp is not None:
-            actual = data.get("tuv_set")
-            if actual is not None and int(actual) == int(self._optimistic_target_temp):
-                self._optimistic_target_temp = None
+        actual_target = data.get("tuv_set")
+        self._pending_target.settle(
+            lambda target: actual_target is not None and int(actual_target) == target
+        )
 
-        if self._optimistic_operation is not None:
-            actual_enabled = data.get("tuv_enabled")
-            expected_enabled = self._optimistic_operation == "auto"
-            if actual_enabled is not None and bool(actual_enabled) == expected_enabled:
-                self._optimistic_operation = None
+        actual_enabled = data.get("tuv_enabled")
+        self._pending_operation.settle(
+            lambda operation: actual_enabled is not None
+            and bool(actual_enabled) == (operation == "auto")
+        )
 
         super()._handle_coordinator_update()
 
@@ -87,8 +90,8 @@ class MygrenWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     @property
     def target_temperature(self) -> float | None:
         """Return the temperature we try to reach (optimistic if pending)."""
-        if self._optimistic_target_temp is not None:
-            return self._optimistic_target_temp
+        if self._pending_target.value is not None:
+            return self._pending_target.value
         return self.coordinator.data.get("tuv_set")
 
     @property
@@ -104,8 +107,8 @@ class MygrenWaterHeater(CoordinatorEntity, WaterHeaterEntity):
     @property
     def current_operation(self) -> str:
         """Return current operation (optimistic if pending)."""
-        if self._optimistic_operation is not None:
-            return self._optimistic_operation
+        if self._pending_operation.value is not None:
+            return self._pending_operation.value
         if self.coordinator.data.get("tuv_enabled"):
             return "auto"
         return "off"
@@ -127,7 +130,7 @@ class MygrenWaterHeater(CoordinatorEntity, WaterHeaterEntity):
         if temperature is None:
             return
 
-        temperature = int(temperature)
+        temperature = round(float(temperature))
 
         if temperature < self.min_temp or temperature > self.max_temp:
             _LOGGER.error(
@@ -137,20 +140,22 @@ class MygrenWaterHeater(CoordinatorEntity, WaterHeaterEntity):
             return
 
         # Optimistic: update UI immediately
-        self._optimistic_target_temp = float(temperature)
+        self._pending_target.set(temperature)
         self.async_write_ha_state()
 
-        await self._api.set_tuv_temperature(temperature)
+        async with rollback_on_error(self, self._pending_target):
+            await self._api.set_tuv_temperature(temperature)
         await self.coordinator.async_request_refresh()
 
     async def async_set_operation_mode(self, operation_mode: str) -> None:
         """Set new operation mode with optimistic update."""
         # Optimistic: update UI immediately
-        self._optimistic_operation = operation_mode
+        self._pending_operation.set(operation_mode)
         self.async_write_ha_state()
 
         enabled = operation_mode == "auto"
-        await self._api.set_tuv_enabled(enabled)
+        async with rollback_on_error(self, self._pending_operation):
+            await self._api.set_tuv_enabled(enabled)
         await self.coordinator.async_request_refresh()
 
     @property

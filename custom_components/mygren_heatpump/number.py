@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device import mygren_device_info
 from .models import MygrenConfigEntry
+from .optimistic import PendingValue, rollback_on_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,22 +85,23 @@ class MygrenNumber(CoordinatorEntity, NumberEntity):
         self._attr_device_info = mygren_device_info(
             entry, sw_version=coordinator.data.get("mar_version", "Unknown")
         )
-        # Optimistic state — None means "use coordinator data"
-        self._optimistic_value: float | None = None
+        # Value shown until telemetry confirms it
+        self._pending = PendingValue()
 
     def _handle_coordinator_update(self) -> None:
-        """Clear optimistic state only when coordinator data confirms the change."""
-        if self._optimistic_value is not None and self.entity_description.value_fn:
+        """Clear optimistic state once telemetry confirms it or it times out."""
+        if self.entity_description.value_fn:
             actual = self.entity_description.value_fn(self.coordinator.data)
-            if actual is not None and int(actual) == int(self._optimistic_value):
-                self._optimistic_value = None
+            self._pending.settle(
+                lambda value: actual is not None and int(actual) == int(value)
+            )
         super()._handle_coordinator_update()
 
     @property
     def native_value(self) -> float | None:
         """Return the current value (optimistic if pending)."""
-        if self._optimistic_value is not None:
-            return self._optimistic_value
+        if self._pending.value is not None:
+            return self._pending.value
         if self.entity_description.value_fn:
             value = self.entity_description.value_fn(self.coordinator.data)
             return float(value) if value is not None else None
@@ -108,15 +110,16 @@ class MygrenNumber(CoordinatorEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set new value with optimistic update."""
         # Optimistic: update UI immediately
-        self._optimistic_value = value
+        self._pending.set(value)
         self.async_write_ha_state()
 
         int_value = int(value)
 
-        if self.entity_description.key == "curve":
-            await self._api.set_curve(int_value)
-        elif self.entity_description.key == "shift":
-            await self._api.set_shift(int_value)
+        async with rollback_on_error(self, self._pending):
+            if self.entity_description.key == "curve":
+                await self._api.set_curve(int_value)
+            elif self.entity_description.key == "shift":
+                await self._api.set_shift(int_value)
 
         await self.coordinator.async_request_refresh()
 

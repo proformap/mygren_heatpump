@@ -26,6 +26,8 @@ class MygrenBinarySensorEntityDescription(BinarySensorEntityDescription):
     """Describes Mygren binary sensor entity."""
 
     value_fn: Callable[[dict], bool] | None = None
+    # Older telemetry field names for the same value
+    fallback_keys: tuple[str, ...] = ()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -94,6 +96,7 @@ OPERATIONAL_BINARY_SENSORS: tuple[MygrenBinarySensorEntityDescription, ...] = (
         key="systemneedheat",
         name="System Needs Heat",
         device_class=BinarySensorDeviceClass.HEAT,
+        fallback_keys=("heatneed",),
         value_fn=lambda data: bool(
             data.get("systemneedheat") or data.get("heatneed")
         ),
@@ -114,6 +117,7 @@ OPERATIONAL_BINARY_SENSORS: tuple[MygrenBinarySensorEntityDescription, ...] = (
         key="tariff_installed",
         name="Tariff Installed",
         icon="mdi:power-plug",
+        fallback_keys=("hdoinstalled",),
         value_fn=lambda data: bool(
             data.get("tariff_installed") or data.get("hdoinstalled")
         ),
@@ -174,6 +178,7 @@ DIAGNOSTIC_BINARY_SENSORS: tuple[MygrenBinarySensorEntityDescription, ...] = (
         icon="mdi:pause-circle",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
+        fallback_keys=("hpforcedstop",),
         value_fn=lambda data: bool(
             data.get("hp_forcedpause") or data.get("hpforcedstop")
         ),
@@ -373,5 +378,13 @@ class MygrenBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
-        return self.coordinator.last_update_success
+        """Return if entity is available.
+
+        A field missing from telemetry means the state is unknown. It must not
+        read as off, or a missing fault field would look like no fault.
+        """
+        description = self.entity_description
+        return self.coordinator.last_update_success and any(
+            self.coordinator.data.get(key) is not None
+            for key in (description.key, *description.fallback_keys)
+        )

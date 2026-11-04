@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, CONF_VERIFY_SSL, DEFAULT_SCAN_INTERVAL, DOMAIN
@@ -36,10 +37,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MygrenConfigEntry) -> bo
     # Authenticate first
     try:
         await api.authenticate()
-    except MygrenAPIError as err:
+    except MygrenAuthError as err:
+        # Retrying won't fix wrong credentials
         _LOGGER.error("Failed to authenticate with Mygren API: %s", err)
         await api.close()
         return False
+    except MygrenAPIError as err:
+        # The pump may just be offline, so let Home Assistant retry setup
+        await api.close()
+        raise ConfigEntryNotReady(f"Cannot reach Mygren heat pump: {err}") from err
 
     async def async_update_data() -> dict:
         """Fetch data from the heat pump API."""
@@ -65,7 +71,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MygrenConfigEntry) -> bo
     )
 
     # Fetch initial data
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady:
+        # Each retry creates a new client, so don't leave this session open
+        await api.close()
+        raise
 
     entry.runtime_data = MygrenRuntimeData(api=api, coordinator=coordinator)
 

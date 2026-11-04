@@ -328,8 +328,8 @@ class MygrenAPI:
         """Set manual program output temperature."""
         return await self._put(API_PROGRAM_MANUAL, temperature)
 
-    async def set_comfort_temperature(self, temperature: int) -> Any:
-        """Set comfort (interior target) temperature."""
+    async def set_comfort_temperature(self, temperature: float) -> Any:
+        """Set comfort (interior target) temperature, in 0.1 degree steps."""
         return await self._put(API_PROGRAM_COMFORT, temperature)
 
     async def set_program_scheduler_enabled(self, enabled: bool) -> Any:

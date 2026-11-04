@@ -11,6 +11,8 @@ CONF_VERIFY_SSL = "verify_ssl"
 # Default values
 DEFAULT_NAME = "Mygren Heat Pump"
 DEFAULT_SCAN_INTERVAL = 30
+# Seconds to show a changed value while waiting for telemetry to confirm it
+OPTIMISTIC_TIMEOUT = 120
 
 # API endpoints (relative to /api)
 API_VERSION = "/api/"
